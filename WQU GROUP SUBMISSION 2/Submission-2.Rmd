@@ -1,0 +1,184 @@
+---
+title: "Volatility and Multivariate Analysis"
+author: "MscFE 610(C20-S2) Group3A"
+date: "7/8/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Name of Group Members
++ Abimbola Olawale Victor (abimbolaolawale41@gmail.com)
++ Ogbekile Chukwudi Samuel (Ogbekilechukwudi@gmail.com)
++ Aboubacar SAÏDOU BOUREIMA (aboubacarsaidouboureima145@gmail.com)
++ Michael Segun Olanipekun (molanipekun10@gmail.com)
++ Abiodun Jimoh (suliman.jumah@gmail.com)
+
+# Volatility Analysis
+Forecast Apple daily stock return using a GARCH model. Use Yahoo Finance as your data source.
+
+#### Importing Dataset
+```{r}
+library(readr) 
+data<-read_csv("AAPL.csv", col_types = cols(Date = col_date(format = "%Y-%m-%d")))
+```
+
+### 1. Select one type of GARCH model (ARCH, GARCH-M, IGARCH, EGARCH, TARCH,multivariate GARCH, etc.) to complete your analysis. Explain your choice.
+
+
+
+```{r }
+library(quantmod)
+#Creating returns
+price = as.xts(data$`Adj Close`, order.by = as.Date(data$Date))
+names(price) = c("price")
+returns = dailyReturn(price)
+plot(returns)
+```
+
+
+#### 1.1 Checking Stationarity 
+```{r}
+library(tseries)
+adf.test(returns)
+```
+Based on the result of the stationarity test, it was deduced from it that the data is stationary. Looking at the p-value of the Agumented Dickey Fuller, we found out that it is less than 0.05 so we reject the null hypothesis and accept the altanative hypothesis i.e the data is stationary.
+
+*It will be better to apply Box-Jenkins to determine the kind and order of the model*
+
+#### 1.2 Autocorrelation Plot (ACF)
+```{r}
+acf(returns)
+```
+The ACF plot has a significant spike at lag 1 while others decay exponentially to zero.
+
+#### 1.3 Partial Autocorellation Function Plot (PACF)
+```{r}
+pacf(returns)
+```
+We also found out that the PACF is alternating and didnt decay to zero rapidly. This shows the traces of AR model of order 1
+
+#### 1.4 Modelling AR model of Order 1 
+```{r}
+library(forecast)
+ARmodel<- arima(returns, order=c(1,0,0)) 
+ARmodel
+```
+#### 1.5 Plotting the ACF and PACF of the residuals square 
+```{r}
+acf((ARmodel$residuals)^2)
+pacf((ARmodel$residuals)^2)
+```
+Based on all the result above we noticed that the model is sugessting an Asymmetric GARCH model therefore we decided to apply FGARCH. Moreso the ACF and PACF of the residual is showing the posibility of an MA model. 
+
+In other to clear all doubt we decided to model different GARCH model and select the best based on the result.
+
+#### 1.6 Implimenting ARCH(1) 
+```{r}
+library(fGarch)
+arch.fit <- garchFit(~garch(1,0), data = returns, trace = F)
+summary(arch.fit)
+```
+All the parameters of the ARMA modelis significant.
+
+#### 1.7 GARCH-M
+```{r}
+library(rugarch)
+fit =ugarchspec(variance.model=list(model="sGARCH", garchOrder = c(1, 1)), 
+	              mean.model=list(armaOrder=c(0,0), archm=TRUE), 
+	              distribution.model="std")
+```
+
+```{r}
+garchm = ugarchfit(fit, returns, solver='hybrid', out.sample = 30)
+round(coef(garchm),4)
+```
+
+
+```{r}
+garchm
+```
+
+#### 1.8 IGARCH
+```{r}
+fit1 =ugarchspec(
+variance.model = list(model = "iGARCH", 
+            garchOrder = c(1, 1)), 
+            mean.model = list(armaOrder = c(0, 0)), 
+            distribution.model = "norm")
+igarch=ugarchfit(fit1, returns, solver='hybrid', out.sample = 30) 
+round(coef(igarch),4)
+igarch
+```
+
+#### 1.9 TGARCH
+```{r}
+fit2=ugarchspec(
+variance.model = list(model = "fGARCH", submodel="TGARCH", 
+      garchOrder = c(1, 1)), 
+      mean.model = list(armaOrder = c(0, 0)), 
+      distribution.model = "norm")
+tgarch=ugarchfit(fit2, returns, solver='hybrid', out.sample = 30) 
+round(coef(tgarch),4)
+tgarch
+```
+
+#### 1.10 EGARCH
+```{r}
+fit3=ugarchspec(
+variance.model = list(submodel="eGARCH", 
+      garchOrder = c(1, 1)), 
+      mean.model = list(armaOrder = c(0, 0)), 
+      distribution.model = "norm")
+egarch=ugarchfit(fit3, returns, solver='hybrid', out.sample = 30) 
+round(coef(egarch),4)
+egarch
+```
+
+#### Table 1 : Model Comparison Table
+\begin{tabular}{lrrrrr}
+  \hline
+ & Log likelihood & AIC & BIC & Hannan-Quinn & Shibata\\ 
+  \hline
+ARCH(1)      & 11831.78 & -4.702358 & -4.698464 & -4.7000995 & -4.702359 \\ 
+GARCH-M(1,1)      & 12454 & -4.9782 & -4.9704 & -4.9755 & -4.9782 \\ 
+IGARCH(1,1)      & 12170.22 & -4.8659 & -4.8620 & 4.8645 & -4.8659 \\
+TGARCH(1,1)      & 12241.12 & -4.8935 & -4.8870 & -4.8912 & -4.8935 \\
+EGARCH(1,1)      & 12173.87 & -4.8670 & -4.8618 & -4.8651 & -4.8670  \\
+   \hline
+\end{tabular}
+After fitting ARCH, GARCH-M, IGARCH, TGARCH and EGARCH we compared the five (5) models in Table 1 and found out that GARCH-M outperform the other models based on the information criterion. 
+
+We found out that *GARCH-M* has the highest *Log likelihood* and lowest *AIC,BIC Hannan-Quinn and Shibata*. Based on the decision rule of Log likelihood, the higher the value the better the model. Moreso, for *AIC, BIC Hannan-Quinn and Shibata*, the lower the better the model. 
+
+#### 1.11 Performing Model Diagnosis
+```{r}
+diagnosis = residuals(garchm)
+qqnorm(diagnosis)
+```
+Based on the result of the diagnosis test we can deduce that the residual is demostrating a fat tail i.e it is not normally distributed and not autocorellated.
+
+#### 2.0 Forecast the next period daily return (t+1) using the chosen mode
+We will be the best model GarchM for the next 20 returns
+
+```{r}
+forcast = ugarchforecast(garchm, n.ahead=20, n.roll=10)
+forcast
+```
+#### 2.2 Ploting the forcast
+
+```{r}
+plot(forcast, which="all")
+```
+
+# Multivariate Analysis
+
+### Calculate the equilibrium FX for your local currency and do the following:
+
+#### 2.1 Describe the economic theories and models used to calculate equilibrium FX.
+#### 2.2 Indicate macroeconomic variables used to determine the equilibrium FX.
+
+#### 2.3 Explain the connection between linear regression and Vector Error Correction (VEC).
+
+#### 2.4 Calculate the equilibrium FX using VEC and comment all your results. You may use the Behavioral Equilibrium Exchange Rate (BEER) approach
